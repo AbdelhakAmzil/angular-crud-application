@@ -13,6 +13,7 @@ import {Post} from './post';
 export class PostService {
   private apiURL = "https://jsonplaceholder.typicode.com";
   private localPosts: Post[] = [];  // ← stockage local
+  private updatedPosts: { [id: number]: Post } = {};  // ← stockage updates
 
   httpOptions = {
     headers: new HttpHeaders({
@@ -26,11 +27,17 @@ export class PostService {
     // ← charge les posts sauvegardés au démarrage
     const saved = localStorage.getItem('localPosts');
     this.localPosts = saved ? JSON.parse(saved) : [];
+
+    const savedUpdates = localStorage.getItem('updatedPosts');  // ← charge updates
+    this.updatedPosts = savedUpdates ? JSON.parse(savedUpdates) : {};
   }
 
   getAll(): Observable<any> {
     return this.httpClient.get<Post[]>(this.apiURL + '/posts', this.httpOptions).pipe(
-      map(posts => [...posts, ...this.localPosts]),  // ← merge posts locaux
+      map(posts => {
+        const merged = posts.map(p => this.updatedPosts[p.id] ? this.updatedPosts[p.id] : p);
+        return [...merged, ...this.localPosts]
+      }),  // ← merge posts locaux
       catchError(this.errorHandler)
     )
   }
@@ -52,13 +59,33 @@ export class PostService {
   }
 
   find(id: number): Observable<any> {
-    return this.httpClient.get(this.apiURL + '/posts/' + id).pipe(
+    // post local créé par l'utilisateur
+    const localPost = this.localPosts.find(p => p.id === id);
+    if (localPost) return new Observable<any>(obs => {obs.next(localPost); obs.complete(); });
+
+    return this.httpClient.get<Post>(this.apiURL + '/posts/' + id).pipe(
+      map(p => this.updatedPosts[p.id] ? this.updatedPosts[p.id] : p),
       catchError(this.errorHandler)
     )
   }
 
   update(id: number, post: Post): Observable<any> {
     return this.httpClient.put(this.apiURL + '/posts/' + id, JSON.stringify(post), this.httpOptions).pipe(
+      map((res: any) => {
+        const updated = { ...post, id: id };
+
+        // mise à jour dans localPosts si c'est un post créé localement
+        const localIndex = this.localPosts.findIndex(p => p.id == id);
+        if (localIndex !== -1) {
+          this.localPosts[localIndex] = updated;
+          localStorage.setItem('localPosts', JSON.stringify(this.localPosts));
+        } else {
+          // sinon dans updatedPosts
+          this.updatedPosts[id] = updated;
+          localStorage.setItem('updatedPosts', JSON.stringify(this.updatedPosts));
+        }
+        return updated;
+      }),
       catchError(this.errorHandler)
     )
   }
