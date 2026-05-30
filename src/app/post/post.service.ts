@@ -20,7 +20,9 @@ export class PostService {
   --------------------------------------------*/
   httpOptions = {
     headers: new HttpHeaders({
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
     })
   }
 
@@ -38,7 +40,7 @@ export class PostService {
    */
   getAll(): Observable<any> {
 
-    return this.httpClient.get(this.apiURL + '/post/')
+    return this.httpClient.get(this.apiURL + '/posts', this.httpOptions)
 
       .pipe(
         catchError(this.errorHandler)
@@ -52,7 +54,7 @@ export class PostService {
    */
   create(post:Post): Observable<any> {
 
-    return this.httpClient.post(this.apiURL + '/posts/', JSON.stringify(post), this.httpOptions)
+    return this.httpClient.post(this.apiURL + '/posts', JSON.stringify(post), this.httpOptions)
 
       .pipe(
         catchError(this.errorHandler)
