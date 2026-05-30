@@ -14,6 +14,7 @@ export class PostService {
   private apiURL = "https://jsonplaceholder.typicode.com";
   private localPosts: Post[] = [];  // ← stockage local
   private updatedPosts: { [id: number]: Post } = {};  // ← stockage updates
+  private deletedIds: number[] = [];  // ← ajouté
 
   httpOptions = {
     headers: new HttpHeaders({
@@ -30,14 +31,20 @@ export class PostService {
 
     const savedUpdates = localStorage.getItem('updatedPosts');  // ← charge updates
     this.updatedPosts = savedUpdates ? JSON.parse(savedUpdates) : {};
+
+    const savedDeleted = localStorage.getItem('deletedIds');  // ← ajouté
+    this.deletedIds = savedDeleted ? JSON.parse(savedDeleted) : [];
   }
 
   getAll(): Observable<any> {
     return this.httpClient.get<Post[]>(this.apiURL + '/posts', this.httpOptions).pipe(
       map(posts => {
-        const merged = posts.map(p => this.updatedPosts[p.id] ? this.updatedPosts[p.id] : p);
-        return [...merged, ...this.localPosts]
-      }),  // ← merge posts locaux
+        const merged = posts
+          .filter(p => !this.deletedIds.includes(Number(p.id)))  // ← cast
+          .map(p => this.updatedPosts[Number(p.id)] ? this.updatedPosts[Number(p.id)] : p);
+        const localFiltered = this.localPosts.filter(p => !this.deletedIds.includes(Number(p.id)));
+        return [...merged, ...localFiltered];
+      }),
       catchError(this.errorHandler)
     )
   }
@@ -72,16 +79,15 @@ export class PostService {
   update(id: number, post: Post): Observable<any> {
     return this.httpClient.put(this.apiURL + '/posts/' + id, JSON.stringify(post), this.httpOptions).pipe(
       map((res: any) => {
-        const updated = { ...post, id: id };
+        const numId = Number(id);  // ← cast
+        const updated = { ...post, id: numId };
 
-        // mise à jour dans localPosts si c'est un post créé localement
-        const localIndex = this.localPosts.findIndex(p => p.id == id);
+        const localIndex = this.localPosts.findIndex(p => Number(p.id) == numId);
         if (localIndex !== -1) {
           this.localPosts[localIndex] = updated;
           localStorage.setItem('localPosts', JSON.stringify(this.localPosts));
         } else {
-          // sinon dans updatedPosts
-          this.updatedPosts[id] = updated;
+          this.updatedPosts[numId] = updated;
           localStorage.setItem('updatedPosts', JSON.stringify(this.updatedPosts));
         }
         return updated;
@@ -91,9 +97,18 @@ export class PostService {
   }
 
   delete(id: number) {
-    this.localPosts = this.localPosts.filter(p => p.id !== id);
-    localStorage.setItem('localPosts', JSON.stringify(this.localPosts));  // ← persiste
-    return this.httpClient.delete(this.apiURL + '/posts/' + id, this.httpOptions).pipe(
+    const numId = Number(id);  // ← cast
+
+    const localIndex = this.localPosts.findIndex(p => Number(p.id) == numId);
+    if (localIndex !== -1) {
+      this.localPosts.splice(localIndex, 1);
+      localStorage.setItem('localPosts', JSON.stringify(this.localPosts));
+    } else {
+      this.deletedIds.push(numId);
+      localStorage.setItem('deletedIds', JSON.stringify(this.deletedIds));
+    }
+
+    return this.httpClient.delete(this.apiURL + '/posts/' + numId, this.httpOptions).pipe(
       catchError(this.errorHandler)
     )
   }
